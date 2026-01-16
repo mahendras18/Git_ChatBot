@@ -283,6 +283,4 @@ if __name__ == "__main__":
     app.run(port=5001, debug=True, use_reloader=False)
 
 # feature: cleaned API key handling (again changed)
-# This is to check the changes that made
-# This is to check the changes again made by the mahendra-branch to check the -
-# - changes made will also be present in the main or not not
+# This is the changes made by the Mahendra code
