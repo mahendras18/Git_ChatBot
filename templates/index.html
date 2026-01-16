@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>NVIDIA-LLAMA-MAVERICK</title>
+
+  <style>
+    body {
+      font-family: Arial;
+      background: #f4f6f8;
+    }
+
+    .box {
+      max-width: 550px;
+      margin: 60px auto;
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      text-align: center;
+    }
+
+    button {
+      padding: 10px 18px;
+      margin: 8px;
+    }
+
+    select, textarea {
+      width: 100%;
+      padding: 6px;
+      margin-top: 6px;
+    }
+
+    #output, #chatOutput {
+      margin-top: 16px;
+      font-size: 16px;
+      min-height: 24px;
+    }
+
+    textarea {
+      resize: none;
+    }
+
+    .section {
+      margin-top: 20px;
+      padding-top: 10px;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    .toggle {
+      text-align: left;
+      margin: 10px 0;
+      font-size: 14px;
+      background: #f9fafb;
+      padding: 10px;
+      border-radius: 6px;
+    }
+
+    .toggle label {
+      display: block;
+      margin-bottom: 6px;
+      cursor: pointer;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: #555;
+      margin-top: 6px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="box">
+
+    <!-- ================= VOICE ================= -->
+    <h2>🎤 Voice Interaction</h2>
+
+    <!-- Language Dropdown -->
+    <select id="language">
+      <option value="English">English</option>
+      <option value="Hindi">Hindi</option>
+      <option value="Kannada">Kannada</option>
+      <option value="Tamil">Tamil</option>
+      <option value="Telugu">Telugu</option> 
+      <option value="Malayalam">Malayalam</option>
+      <option value="Bengali">Bengali</option>
+      <!-- <option value="Gujarati">Gujarati</option>
+      <option value="Marathi">Marathi</option>
+      <option value="Punjabi">Punjabi</option>
+      <option value="Urdu">Urdu</option> -->
+    </select>
+
+    <!-- 🎙️ VOICE MODE SELECTOR -->
+    <div class="toggle">
+      <strong>Voice Mode</strong>
+
+      <label>
+        <input type="radio" name="voiceMode" value="translate" checked>
+        🌐 Language Translation  
+        <div class="hint">Speak → translated into selected language</div>
+      </label>
+
+      <label>
+        <input type="radio" name="voiceMode" value="chat-dropdown">
+        💬 Q&amp;A (Dropdown Language)  
+        <div class="hint">Ask questions → answer in selected language</div>
+      </label>
+
+      <label>
+        <input type="radio" name="voiceMode" value="chat-auto">
+        🤖 Q&amp;A (Auto Detect Language)  
+        <div class="hint">Ask questions → answer in same language</div>
+      </label>
+    </div>
+
+    <button id="start">Start</button>
+    <button id="stop" disabled>Stop</button>
+
+    <div id="output"></div>
+
+    <input type="file" id="audioFile" accept=".wav,.webm,.mp3,.m4a">
+    <button id="uploadBtn">Upload & Use</button>
+
+    <!-- ================= TEXT CHAT ================= -->
+    <div class="section">
+      <h3>💬 Text Chat</h3>
+
+      <div class="toggle">
+        <label>
+          <input type="checkbox" id="autoLang">
+          Auto detect language (Text only)
+        </label>
+        <div class="hint">
+          ON → reply in same language<br>
+          OFF → reply in dropdown language
+        </div>
+      </div>
+
+      <textarea
+        id="chatInput"
+        rows="4"
+        placeholder="Type your message here..."
+      ></textarea>
+
+      <button id="sendChat">Send</button>
+      <div id="chatOutput"></div>
+    </div>
+
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
