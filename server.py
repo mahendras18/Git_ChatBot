@@ -1,18 +1,34 @@
-from flask import Flask, request, jsonify, render_template
+from fastapi import FastAPI, UploadFile, File, Form
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
 from groq import Groq
 import requests, io, base64
 import soundfile as sf
 import torch
 
 from transformers import pipeline, VitsModel, AutoTokenizer
+import uvicorn
+import webbrowser
 
 # ===================== INIT =====================
-app = Flask(__name__, static_folder="static")
-print("🔥 SERVER FILE LOADED 🔥")
+app = FastAPI()
+print("🔥 SERVER FILE LOADED (FASTAPI) 🔥")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ===================== API KEYS =====================
-NVIDIA_API_KEY = ""
-GROQ_API_KEY = ""
+NVIDIA_API_KEY = " "
+GROQ_API_KEY = " "
 
 # ===================== CLIENTS =====================
 stt_client = Groq(api_key=GROQ_API_KEY)
@@ -20,7 +36,6 @@ NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
 # ===================== LANGUAGE MAPS =====================
 WHISPER_LANG_MAP = {
-    # ISO codes
     "en": "English",
     "hi": "Hindi",
     "kn": "Kannada",
@@ -28,8 +43,6 @@ WHISPER_LANG_MAP = {
     "te": "Telugu",
     "ml": "Malayalam",
     "bn": "Bengali",
-
-    # Full names returned by Whisper
     "english": "English",
     "hindi": "Hindi",
     "kannada": "Kannada",
@@ -54,14 +67,14 @@ LANGUAGE_CODES = {
 }
 
 # ===================== INTENT =====================
-def is_greeting(text):
+def is_greeting(text: str) -> bool:
     return text.strip().lower() in [
         "hi", "hello", "hey", "ok", "okay", "thanks", "thank you"
     ]
 
 # ===================== STT =====================
-def speech_to_text(file):
-    audio_bytes = file.read()
+async def speech_to_text(file: UploadFile):
+    audio_bytes = await file.read()
     res = stt_client.audio.transcriptions.create(
         file=(file.filename, audio_bytes),
         model="whisper-large-v3",
@@ -80,7 +93,7 @@ unless the user explicitly mentions them.
 You understand all Indian languages.
 """
 
-def llama_request(user_text):
+def llama_request(user_text: str) -> str:
     payload = {
         "model": "meta/llama-4-maverick-17b-128e-instruct",
         "messages": [
@@ -99,7 +112,7 @@ def llama_request(user_text):
     res.raise_for_status()
     return res.json()["choices"][0]["message"]["content"].strip()
 
-# ===================== force_text_to_language =====================
+# ===================== TRANSLATION =====================
 def force_text_to_language(text, language):
     return translator(
         text,
@@ -108,8 +121,6 @@ def force_text_to_language(text, language):
         max_length=512
     )[0]["translation_text"]
 
-
-# ===================== TRANSLATE ANSWER ONLY =====================
 def translate_answer(text, target_language):
     return translator(
         text,
@@ -150,137 +161,105 @@ def mms_tts(text, language):
     buffer.seek(0)
     return buffer
 
+# ===================== MODELS =====================
+class ChatRequest(BaseModel):
+    text: str
+    language: str | None = "English"
+
+class TTSRequest(BaseModel):
+    text: str
+    language: str = "English"
+
 # ===================== ROUTES =====================
-@app.route("/")
+
+# ✅ EXACT FLASK BEHAVIOR
+@app.get("/", response_class=HTMLResponse)
 def index():
-    return render_template("index.html")
+    with open("templates/index.html", "r", encoding="utf-8") as f:
+        return f.read()
 
-# ===================== TEXT CHAT (DROPDOWN) =====================
-@app.route("/chat", methods=["POST"])
-def chat():
-    data = request.get_json()
-    user_text = data.get("text", "")
-    target_language = data.get("language", "English")
+# ===================== TEXT CHAT =====================
+@app.post("/chat")
+def chat(req: ChatRequest):
+    if is_greeting(req.text):
+        return {"text": "Hi! How can I help you?"}
 
-    if is_greeting(user_text):
-        return jsonify({"text": "Hi! How can I help you?"})
-
-    answer = llama_request(user_text)
-
-    final_answer = translate_answer(answer, target_language)
-    return jsonify({"text": final_answer})
+    answer = llama_request(req.text)
+    final_answer = translate_answer(answer, req.language)
+    return {"text": final_answer}
 
 # ===================== TEXT CHAT AUTO =====================
-@app.route("/chat-auto", methods=["POST"])
-def chat_auto():
-    data = request.get_json()
-    user_text = data.get("text", "").strip()
+@app.post("/chat-auto")
+def chat_auto(req: ChatRequest):
+    if not req.text.strip():
+        return {"text": ""}
 
-    if not user_text:
-        return jsonify({"text": ""})
-
-    if is_greeting(user_text):
-        return jsonify({"text": user_text})
+    if is_greeting(req.text):
+        return {"text": req.text}
 
     reply = llama_request(
-        f"Reply in the same language as the user.\n\n{user_text}"
+        f"Reply in the same language as the user.\n\n{req.text}"
     )
-
-    return jsonify({"text": reply})
+    return {"text": reply}
 
 # ===================== VOICE TRANSLATE =====================
-@app.route("/voice-translate", methods=["POST"])
-def voice_translate():
-    file = request.files.get("file")
-    target_language = request.form.get("language", "English")
+@app.post("/voice-translate")
+async def voice_translate(
+    file: UploadFile = File(...),
+    language: str = Form("English")
+):
+    spoken_text, _ = await speech_to_text(file)
+    translated = translate_answer(spoken_text, language)
+    return {"text": translated}
 
-    spoken_text, _ = speech_to_text(file)
-
-    translated = translator(
-        spoken_text,
-        src_lang="auto",
-        tgt_lang=LANGUAGE_CODES[target_language],
-        max_length=512
-    )[0]["translation_text"]
-
-    return jsonify({"text": translated})
-
-# ===================== VOICE CHAT (DROPDOWN) =====================
-@app.route("/voice-chat", methods=["POST"])
-def voice_chat():
-    file = request.files.get("file")
-    target_language = request.form.get("language", "English")
-
-    spoken_text, _ = speech_to_text(file)
+# ===================== VOICE CHAT =====================
+@app.post("/voice-chat")
+async def voice_chat(
+    file: UploadFile = File(...),
+    language: str = Form("English")
+):
+    spoken_text, _ = await speech_to_text(file)
 
     if is_greeting(spoken_text):
-        return jsonify({"text": "Hi! How can I help you?"})
+        return {"text": "Hi! How can I help you?"}
 
-    # 🔥 NO TRANSLATION BEFORE LLaMA
     answer = llama_request(spoken_text)
-
-    final_answer = translate_answer(answer, target_language)
-    return jsonify({"text": final_answer})
+    final_answer = translate_answer(answer, language)
+    return {"text": final_answer}
 
 # ===================== VOICE CHAT AUTO =====================
-@app.route("/voice-chat-auto", methods=["POST"])
-def voice_chat_auto():
-    file = request.files.get("file")
-    print(f"file: {file}")
-    print("------------------------------------------------------------")
-
-    spoken_text, whisper_lang = speech_to_text(file)
-    print(f"Spoken Text: {spoken_text}")
-    print(f"Whisper Language: {whisper_lang}")  
-    print("------------------------------------------------------------")
+@app.post("/voice-chat-auto")
+async def voice_chat_auto(file: UploadFile = File(...)):
+    spoken_text, whisper_lang = await speech_to_text(file)
 
     language = WHISPER_LANG_MAP.get(whisper_lang.lower(), "English")
-    print(f"Detected Language: {language}")
-    print("------------------------------------------------------------")
 
     if is_greeting(spoken_text):
-        return jsonify({
-            "text": "Hi! How can I help you?",
-            "language": language
-        })
+        return {"text": "Hi! How can I help you?", "language": language}
 
-    # 1️⃣ Let LLaMA answer freely
     reply_raw = llama_request(spoken_text)
-    print(f"LLaMA Raw Reply: {reply_raw}")
-    print("------------------------------------------------------------")
-
-    # 2️⃣ FORCE into Whisper language (CRITICAL)
     reply = force_text_to_language(reply_raw, language)
-    print(f"Final Reply: {reply}")  
-    print("------------------------------------------------------------")
 
-    return jsonify({
-        "text": reply,
-        "language": language
-    })
+    return {"text": reply, "language": language}
 
 # ===================== TTS =====================
-@app.route("/tts", methods=["POST"])
-def tts():
-    data = request.get_json()
-    text = data.get("text", "")
-    language = data.get("language", "English")
+@app.post("/tts")
+def tts(req: TTSRequest):
+    audio_buffer = mms_tts(req.text, req.language)
 
-    audio_buffer = mms_tts(text, language)
-
-    # SAVE AUDIO TO FILE
     with open("output.wav", "wb") as f:
         f.write(audio_buffer.getvalue())
 
     audio_base64 = base64.b64encode(audio_buffer.getvalue()).decode()
 
-    return jsonify({
-        "audio": "data:audio/wav;base64," + audio_base64
-    })
+    return {"audio": "data:audio/wav;base64," + audio_base64}
 
 # ===================== RUN =====================
 if __name__ == "__main__":
-    app.run(port=5001, debug=True, use_reloader=False)
+    print("🚀 Running on http://localhost:5001")
+    webbrowser.open("http://localhost:5001")
+    uvicorn.run(app, host="0.0.0.0", port=5001, reload=False)
+
 
 # feature: cleaned API key handling (again changed)
 # This is the changes made by the mahendra-branch code
